@@ -13,7 +13,10 @@ weather_api = os.getenv("OPEN_WEATHER_API")
 
 @bot.message_handler(commands=["start"])
 def start(message):
-    user_first_name = str(message.chat.first_name)
+    user = getattr(message, "from_user", None)
+    user_first_name = (
+        user.first_name if user and getattr(user, "first_name", None) else "friend"
+    )
     bot.reply_to(
         message, f"Hello! {user_first_name}, enter the name of your city or village:"
     )
@@ -22,13 +25,36 @@ def start(message):
 @bot.message_handler(content_types=["text"])
 def get_weather(message):
     city = message.text.strip().lower()
-    place = requests.get(
-        f"http://api.openweathermap.org/geo/1.0/direct?q={city}&appid={weather_api}"
-    )
+    try:
+        place_response = requests.get(
+            f"http://api.openweathermap.org/geo/1.0/direct?q={city}&appid={weather_api}",
+            timeout=10,
+        )
+        place_response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print("HTTP error !")
+        return
+    except requests.exceptions.ConnectionError:
+        bot.reply_to(
+            message, "Error: Connection error. Please check your internet connection."
+        )
+        print("Connection error !")
+        return
+    except requests.exceptions.Timeout:
+        bot.reply_to(message, "Error: Request timed out. Please try again later.")
+        print("Timeout error !")
+        return
+    except requests.exceptions.RequestException as exc:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print(f"Request error: {exc}")
+        return
+
     normal_name = city.capitalize()
     print("User enter:", normal_name)
     print(city)
-    geo = place.json()
+
+    geo = place_response.json()
     if not geo:
         bot.reply_to(message, f"Undefined place: {city}")
         return
@@ -51,9 +77,31 @@ def get_weather(message):
     lon = city_info["lon"]
     print("lat", lat)
     print("lon", lon)
-    weather_response = requests.get(
-        f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={weather_api}&units=metric&lang=uk"
-    )
+    try:
+        weather_response = requests.get(
+            f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={weather_api}&units=metric&lang=uk",
+            timeout=10,
+        )
+        weather_response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print("HTTP error !")
+        return
+    except requests.exceptions.ConnectionError:
+        bot.reply_to(
+            message, "Error: Connection error. Please check your internet connection."
+        )
+        print("Connection error !")
+        return
+    except requests.exceptions.Timeout:
+        bot.reply_to(message, "Error: Request timed out. Please try again later.")
+        print("Timeout error !")
+        return
+    except requests.exceptions.RequestException as exc:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print(f"Request error: {exc}")
+        return
+
     weather = weather_response.json()
 
     weather_type = weather["weather"][0]["main"]
@@ -67,7 +115,7 @@ def get_weather(message):
         message,
         f"""🌡 Temperature now: {temperature} °C
 -------------------------
-🌡 Feels like: {feels} °C
+🖐 Feels like: {feels} °C
 -------------------------
 💨 Wind speed: {wind} m/s
 -------------------------

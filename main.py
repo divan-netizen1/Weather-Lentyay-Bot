@@ -10,6 +10,8 @@ token = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(token)
 weather_api = os.getenv("OPEN_WEATHER_API")
 
+last_coordinates = {}
+
 
 @bot.message_handler(commands=["start"])
 def start(message):
@@ -20,6 +22,80 @@ def start(message):
     bot.reply_to(
         message, f"Hello! {user_first_name}, enter the name of your city or village:"
     )
+
+
+def fetch_weather(lat, lon):
+    response = requests.get(
+        f"https://api.openweathermap.org/data/2.5/weather",
+        params={
+            "lat": lat,
+            "lon": lon,
+            "appid": weather_api,
+            "units": "metric",
+            "lang": "uk",
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+@bot.message_handler(commands=["forecast"])
+def forecast(message):
+    coordinates = last_coordinates.get(message.chat.id)
+    if not coordinates:
+        bot.reply_to(message, "Please enter a city or village name first.")
+        return
+    lat, lon = coordinates
+    forecast_response = requests.get(
+        f"https://api.openweathermap.org/data/2.5/forecast?",
+        params={
+            "lat": lat,
+            "lon": lon,
+            "appid": weather_api,
+            "units": "metric",
+            "lang": "uk",
+        },
+        timeout=10,
+    )
+    forecast_response.raise_for_status()
+    forecast_data = forecast_response.json()
+
+    forecast_info = forecast_data.get("list", [])
+
+    for data in forecast_info:
+        dt_txt = data.get("dt_txt", "Unknown time")
+        temperature = data.get("main", {}).get("temp", "Unknown temperature")
+        feels_like = data.get("main", {}).get("feels_like", "Undefined")
+        temperature_min = data.get("main", {}).get("temp_min", "Undefined")
+        temperature_max = data.get("main", {}).get("temp_max", "Undefined")
+        humidity = data.get("main", {}).get("humidity", "Undefined")
+        weather_type = data.get("weather", [{}])[0].get("main", "Undefined")
+        description = data.get("weather", [{}])[0].get("description", "Undefined")
+        wind = data.get("wind", {}).get("speed", "Undefined")
+
+        bot.send_message(
+            message.chat.id,
+            f"""📅 Date and time: {dt_txt}
+--------------------------------
+🌡 Temperature: {temperature} °C
+--------------------------------
+✋ Feels like: {feels_like} °C
+--------------------------------
+-🌡 Min temperature: {temperature_min} °C
+--------------------------------
++🌡 Max temperature: {temperature_max} °C
+--------------------------------
+💨 Wind speed: {wind} m/s
+--------------------------------
+💧 Humidity: {humidity}
+--------------------------------
+⛅️ Weather: {weather_type}
+--------------------------------
+☁️ Description: {description}
+
+""",
+        )
 
 
 @bot.message_handler(content_types=["text"])
@@ -34,20 +110,24 @@ def get_weather(message):
     except requests.exceptions.HTTPError:
         bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
         print("HTTP error !")
+        print(place_response.text)
         return
     except requests.exceptions.ConnectionError:
         bot.reply_to(
             message, "Error: Connection error. Please check your internet connection."
         )
         print("Connection error !")
+        print(place_response.text)
         return
     except requests.exceptions.Timeout:
         bot.reply_to(message, "Error: Request timed out. Please try again later.")
         print("Timeout error !")
+        print(place_response.text)
         return
     except requests.exceptions.RequestException as exc:
         bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
         print(f"Request error: {exc}")
+        print(place_response.text)
         return
 
     normal_name = city.capitalize()
@@ -75,38 +155,19 @@ def get_weather(message):
     )
     lat = city_info["lat"]
     lon = city_info["lon"]
+    last_coordinates[message.chat.id] = (lat, lon)
     print("lat", lat)
     print("lon", lon)
+
     try:
-        weather_response = requests.get(
-            f"https://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={weather_api}&units=metric&lang=uk",
-            timeout=10,
-        )
-        weather_response.raise_for_status()
-    except requests.exceptions.HTTPError:
-        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
-        print("HTTP error !")
-        return
-    except requests.exceptions.ConnectionError:
-        bot.reply_to(
-            message, "Error: Connection error. Please check your internet connection."
-        )
-        print("Connection error !")
-        return
-    except requests.exceptions.Timeout:
-        bot.reply_to(message, "Error: Request timed out. Please try again later.")
-        print("Timeout error !")
-        return
+        weather = fetch_weather(lat, lon)
     except requests.exceptions.RequestException as exc:
         bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
-        print(f"Request error: {exc}")
+        print(f"Weather request error: {exc}")
         return
-
-    weather = weather_response.json()
 
     weather_type = weather["weather"][0]["main"]
     description = weather["weather"][0]["description"]
-
     temperature = weather["main"]["temp"]
     feels = weather["main"]["feels_like"]
     wind = weather["wind"]["speed"]
@@ -123,7 +184,26 @@ def get_weather(message):
 -------------------------
 ☁️ Description: {description}""",
     )
-    print(temperature, "°C")
+    bot.send_message(
+        message.chat.id,
+        "Do you want to see the forecast for the next 5 days? Type /forecast",
+    )
+    print(temperature, "temperature °C")
+
+
+@bot.message_handler(commands=["help"])
+def help(message):
+    pass
+
+
+@bot.message_handler(commands=["about"])
+def about(message):
+    pass
+
+
+@bot.message_handler(commands=["history"])
+def history(message):
+    pass
 
 
 print("Bot started!")

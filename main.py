@@ -2,7 +2,7 @@ import os
 import telebot
 from dotenv import load_dotenv
 import requests
-import json
+import time
 
 load_dotenv()
 
@@ -25,6 +25,7 @@ def start(message):
 
 
 def fetch_weather(lat, lon):
+
     response = requests.get(
         f"https://api.openweathermap.org/data/2.5/weather",
         params={
@@ -47,55 +48,95 @@ def forecast(message):
         bot.reply_to(message, "Please enter a city or village name first.")
         return
     lat, lon = coordinates
-    forecast_response = requests.get(
-        f"https://api.openweathermap.org/data/2.5/forecast?",
-        params={
-            "lat": lat,
-            "lon": lon,
-            "appid": weather_api,
-            "units": "metric",
-            "lang": "uk",
-        },
-        timeout=10,
-    )
-    forecast_response.raise_for_status()
+    try:
+        forecast_response = requests.get(
+            f"https://api.openweathermap.org/data/2.5/forecast",
+            params={
+                "lat": lat,
+                "lon": lon,
+                "appid": weather_api,
+                "units": "metric",
+                "lang": "uk",
+            },
+            timeout=10,
+        )
+        forecast_response.raise_for_status()
+    except requests.exceptions.HTTPError:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print("HTTP error !")
+        return
+    except requests.exceptions.ConnectionError:
+        bot.reply_to(
+            message, "Error: Connection error. Please check your internet connection."
+        )
+        print("Connection error !")
+        return
+    except requests.exceptions.Timeout:
+        bot.reply_to(message, "Error: Request timed out. Please try again later.")
+        print("Timeout error !")
+        return
+    except requests.exceptions.RequestException as exc:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print(f"Request error: {exc}")
+        return
+
     forecast_data = forecast_response.json()
 
     forecast_info = forecast_data.get("list", [])
 
-    for data in forecast_info:
-        dt_txt = data.get("dt_txt", "Unknown time")
-        temperature = data.get("main", {}).get("temp", "Unknown temperature")
-        feels_like = data.get("main", {}).get("feels_like", "Undefined")
-        temperature_min = data.get("main", {}).get("temp_min", "Undefined")
-        temperature_max = data.get("main", {}).get("temp_max", "Undefined")
-        humidity = data.get("main", {}).get("humidity", "Undefined")
-        weather_type = data.get("weather", [{}])[0].get("main", "Undefined")
-        description = data.get("weather", [{}])[0].get("description", "Undefined")
-        wind = data.get("wind", {}).get("speed", "Undefined")
+    forecast_by_day = {}
 
-        bot.send_message(
-            message.chat.id,
-            f"""📅 Date and time: {dt_txt}
---------------------------------
-🌡 Temperature: {temperature} °C
---------------------------------
-✋ Feels like: {feels_like} °C
---------------------------------
--🌡 Min temperature: {temperature_min} °C
---------------------------------
-+🌡 Max temperature: {temperature_max} °C
---------------------------------
-💨 Wind speed: {wind} m/s
---------------------------------
-💧 Humidity: {humidity}
---------------------------------
-⛅️ Weather: {weather_type}
---------------------------------
-☁️ Description: {description}
+    is_first = True
 
-""",
-        )
+    for days_data in forecast_info:
+        dt_txt = days_data.get("dt_txt", "Unknown time")
+        sliced_data = dt_txt[:10]
+
+        if not sliced_data in forecast_by_day:
+            forecast_by_day[sliced_data] = []
+
+        forecast_by_day[sliced_data].append(days_data)
+
+    for key in forecast_by_day:
+        container = []
+
+        for data in forecast_by_day[key]:
+            temperature = data.get("main", {}).get("temp", "Unknown temperature")
+            if isinstance(temperature, (int, float)):
+                container.append(temperature)
+            else:
+                print("Temperature isn't a number!")
+                return
+
+        average = sum(container) / len(container) if container else 0
+        day_message = f"""
+
+📆 Forecast for {key} | Average daily temperature: {average:.1f}°C :\n\n """
+
+        for data in forecast_by_day[key]:
+            dt_txt = data.get("dt_txt", "Unknown time")
+            feels_like = data.get("main", {}).get("feels_like", "Undefined")
+            temperature = data.get("main", {}).get("temp", "Unknown temperature")
+            weather_type = data.get("weather", [{}])[0].get("main", "Undefined")
+            description = data.get("weather", [{}])[0].get("description", "Undefined")
+            wind = data.get("wind", {}).get("speed", "Undefined")
+            humidity = data.get("main", {}).get("humidity", "Undefined")
+            daily_time = dt_txt[11:16]
+            head_forecast = f""" 
+---------------------------------------------------------------------
+⏰Time: {daily_time} 
+
+🌡 Temperature: {temperature}°C | (✋ Feels like: {feels_like})°C
+
+🌤 Weather: {weather_type} - ☁️ Description: {description}
+
+💨 Wind speed: {wind} m/s | 💧 Humidity: {humidity}%
+ """
+            day_message += head_forecast
+        is_first = False
+        bot.send_message(message.chat.id, day_message)
+        if not is_first:
+            time.sleep(0.8)
 
 
 @bot.message_handler(content_types=["text"])
@@ -110,24 +151,20 @@ def get_weather(message):
     except requests.exceptions.HTTPError:
         bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
         print("HTTP error !")
-        print(place_response.text)
         return
     except requests.exceptions.ConnectionError:
         bot.reply_to(
             message, "Error: Connection error. Please check your internet connection."
         )
         print("Connection error !")
-        print(place_response.text)
         return
     except requests.exceptions.Timeout:
         bot.reply_to(message, "Error: Request timed out. Please try again later.")
         print("Timeout error !")
-        print(place_response.text)
         return
     except requests.exceptions.RequestException as exc:
         bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
         print(f"Request error: {exc}")
-        print(place_response.text)
         return
 
     normal_name = city.capitalize()

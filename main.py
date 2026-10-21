@@ -40,7 +40,9 @@ favorite_city TEXT NOT NULL,
 PRIMARY KEY (user_id, favorite_city)
 )
 """)
-
+connection.commit()
+cursor.close()
+connection.close()
 
 @bot.message_handler(commands=["help"])
 def help(message):
@@ -52,7 +54,7 @@ Weather Lentyay Bot - help:
 Available Commands:
     * /start - Start using the bot.
     * /help - Show this help message.
-    * /forecast - Get the weather forecast for the next 5 days.
+    * /forecast - Get the weather forecast for the next 5  days.
     * /about - learn more about the bot.
     * /history - View your recent city search history.
     * /favorite - Access your favorite city.
@@ -97,6 +99,7 @@ def share_favorite(message, user_id):
 
     if not city:
         bot.reply_to(message, "City cannot be empty")
+        return
 
     connection = sqlite3.connect("bot_databases.db")
     cursor = connection.cursor()
@@ -145,9 +148,7 @@ LIMIT 10""",
     if not cities:
         bot.reply_to(message, "Your search history is empty.")
         return
-    print(f"Some five from DB - {cities}")
-
-    history_message = f"🕐 Your last 5 city searches: \n\n"
+    history_message = f"🕐 Your last 10 city searches: \n\n"
 
     for city, searched_at in cities:
         history_message += f"📍 {city} — {searched_at}\n\n"
@@ -304,8 +305,6 @@ def get_weather(message):
         return
 
     print(city)
-    print(f"ID person is - {id_person}")
-
     geo = place_response.json()
     if not geo:
         bot.reply_to(message, f"Undefined place: {city}")
@@ -331,8 +330,6 @@ def get_weather(message):
         "SELECT city FROM History WHERE user_id = ? ORDER BY id DESC LIMIT 5",
         (id_person,),
     )
-    some_five = cursor.fetchall()
-    print(f"The last cities from DB - {some_five}\n")
     connection.commit()
     cursor.close()
     connection.close()

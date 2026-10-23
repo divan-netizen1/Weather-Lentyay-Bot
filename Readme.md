@@ -1,6 +1,6 @@
 # 🌦️ Weather Lentyay Bot
 
-A Telegram bot built with Python that provides current weather information and a five-day weather forecast for a city or village.
+A Telegram [Weather Lentyay bot](https://t.me/wheatherDLTLentyaybot) built with Python that provides current weather information and a five-day weather forecast for a city or village.
 
 The project uses the OpenWeatherMap API to retrieve weather data and SQLite to store users' search history and favorite cities.
 
@@ -105,8 +105,6 @@ Weather-Lentyay-Bot/
 └── .env                 # Local configuration; not committed
 ```
 
-The `bot_databases.db` SQLite database is created automatically when the application runs. It stores search history and favorite cities.
-
 ## 🌦️ How It Works
 
 1. The user sends a city or village name to the bot.
@@ -117,16 +115,8 @@ The `bot_databases.db` SQLite database is created automatically when the applica
 6. The location is saved in the user's search history.
 7. The user can request a five-day forecast or use other bot commands.
 
-## 🔮 Future Improvements
-
-- Improve the favorite-city feature so users can select and retrieve saved cities.
-- Add more comprehensive error handling and input validation.
-- Improve database management and separate database operations from bot handlers.
-- Add automated tests.
-- Refactor the application into separate modules as the project grows.
-
 ## 👨‍💻 Author
 
-**Developer:** [@LentyayT9](https://github.com/divan-netizen1)
+**Developer:** [divan-net1zen1](https://github.com/divan-netizen1)
 
 **Repository:** [Weather-Lentyay-Bot](https://github.com/divan-netizen1/Weather-Lentyay-Bot)

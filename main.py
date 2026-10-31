@@ -35,14 +35,14 @@ cursor = connection.cursor()
 
 cursor.execute("""
 CREATE TABLE IF NOT EXISTS Favorites(
-user_id INTEGER NOT NULL,
-favorite_city TEXT NOT NULL,
-PRIMARY KEY (user_id, favorite_city)
+user_id INTEGER PRIMARY KEY,
+favorite_city TEXT NOT NULL
 )
 """)
 connection.commit()
 cursor.close()
 connection.close()
+
 
 @bot.message_handler(commands=["help"])
 def help(message):
@@ -101,17 +101,60 @@ def share_favorite(message, user_id):
         bot.reply_to(message, "City cannot be empty")
         return
 
+    try:
+        response_city = requests.get(
+            f"https://api.openweathermap.org/geo/1.0/direct",
+            params={
+                "appid": weather_api,
+                "q": city,
+            },
+            timeout=10,
+        )
+        response_city.raise_for_status()
+    except requests.exceptions.HTTPError:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print("HTTP error !")
+        return
+    except requests.exceptions.ConnectionError:
+        bot.reply_to(
+            message,
+            "Error: Connection error. Please check your internet connection.",
+        )
+        print("Connection error !")
+        return
+    except requests.exceptions.Timeout:
+        bot.reply_to(message, "Error: Request timed out. Please try again later.")
+        print("Timeout error !")
+        return
+    except requests.exceptions.RequestException as exc:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print(f"Request error: {exc}")
+        return
+    geos = response_city.json()
+    if not geos:
+        question = bot.reply_to(message, f"Undefined place: {city}. Try again:")
+        bot.register_next_step_handler(question, share_favorite, user_id)
+        return
+
+    x = geos[0]
+    city_name = x.get("name", city)
     connection = sqlite3.connect("bot_databases.db")
     cursor = connection.cursor()
-
     cursor.execute(
-        "INSERT OR IGNORE INTO Favorites (user_id, favorite_city) VALUES (?, ?)",
-        (user_id, city),
+        "INSERT OR REPLACE INTO Favorites (user_id, favorite_city) VALUES (?, ?)",
+        (user_id, city_name),
     )
     connection.commit()
     cursor.close()
     connection.close()
-    bot.reply_to(message, f"⭐ {city} saved to favorites!")
+    print(city_name + " output from favorite")
+
+    bot.reply_to(message, f"⭐ {city_name} saved to favorites!")
+
+
+# @bot.message_handler(commands=["fcity"])
+# def fcity(message):
+#     pass
 
 
 @bot.message_handler(commands=["start"])
@@ -129,9 +172,9 @@ def start(message):
 @bot.message_handler(commands=["history"])
 def history(message):
     user_id = message.from_user.id
+
     connection = sqlite3.connect("bot_databases.db")
     cursor = connection.cursor()
-
     cursor.execute(
         """
 SELECT city, searched_at 
@@ -278,7 +321,7 @@ def forecast(message):
 @bot.message_handler(content_types=["text"])
 def get_weather(message):
     id_person = message.from_user.id
-    city = message.text.strip().lower()
+    city = message.text.strip().title()
     try:
         place_response = requests.get(
             f"https://api.openweathermap.org/geo/1.0/direct?q={city}&appid={weather_api}",
@@ -345,8 +388,6 @@ def get_weather(message):
     lat = city_info["lat"]
     lon = city_info["lon"]
     last_coordinates[message.chat.id] = (lat, lon)
-    print("lat", lat)
-    print("lon", lon)
 
     try:
         weather = fetch_weather(lat, lon)
@@ -377,7 +418,6 @@ def get_weather(message):
         message.chat.id,
         "Do you want to see the forecast for the next 5 days? Type /forecast",
     )
-    print(temperature, "temperature °C")
 
 
 print("Bot started!")

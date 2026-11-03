@@ -5,6 +5,8 @@ import requests
 import time
 import sqlite3
 
+# import threading - for share_favorite function (instead of time.sleep())
+
 load_dotenv()
 
 token = os.getenv("BOT_TOKEN")
@@ -58,6 +60,7 @@ Available Commands:
     * /about - learn more about the bot.
     * /history - View your recent city search history.
     * /favorite - Access your favorite city.
+    * /favorite_city - View your favorite city and give you forecast.
 
 How to use the bot
 1. Send /start
@@ -96,6 +99,24 @@ def favorite(message):
 
 def share_favorite(message, user_id):
     city = message.text.strip()
+    if message.entities:
+        for entity in message.entities:
+            if entity.type == "bot_command":
+                bot.clear_step_handler_by_chat_id(chat_id=message.chat.id)
+                bot.reply_to(message, "Exit from /favorite commands...")
+                time.sleep(0.9)
+                bot.send_message(message.chat.id, "Success ✅")
+                time.sleep(0.5)
+                # after import threading
+
+                # def send_done(chat_id):
+                #     bot.send_message(chat_id, "Success ✅")
+
+                # threading.Timer(3, send_done, args=[message.chat.id]).start()
+                #                 return
+
+                bot.process_new_messages([message])
+                return
 
     if not city:
         bot.reply_to(message, "City cannot be empty")
@@ -152,9 +173,67 @@ def share_favorite(message, user_id):
     bot.reply_to(message, f"⭐ {city_name} saved to favorites!")
 
 
-# @bot.message_handler(commands=["fcity"])
-# def fcity(message):
-#     pass
+@bot.message_handler(commands=["favorite_city"])
+def show_favorite(message):
+    user_id = message.from_user.id
+
+    connection = sqlite3.connect("bot_databases.db")
+    cursor = connection.cursor()
+    cursor.execute(
+        "SELECT favorite_city FROM Favorites WHERE user_id = ?",
+        (user_id,),
+    )
+    fav_city = cursor.fetchone()
+    cursor.close()
+    connection.close()
+
+    if not fav_city:
+        bot.reply_to(
+            message, "You haven't set a favorite city yet. Use /favorite to set one."
+        )
+        return
+    favorite_city = fav_city[0]
+    bot.reply_to(message, f"Your favorite city is {favorite_city}")
+    get_favorite_forecast(message, favorite_city)
+
+
+def get_favorite_forecast(message, favorite_city):
+    try:
+        response_fav = requests.get(
+            f"https://api.openweathermap.org/geo/1.0/direct",
+            params={
+                "q": favorite_city,
+                "appid": weather_api,
+            },
+            timeout=10,
+        )
+        response_fav.raise_for_status()
+    except requests.exceptions.HTTPError:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print("HTTP error !")
+        return
+    except requests.exceptions.ConnectionError:
+        bot.reply_to(
+            message, "Error: Connection error. Please check your internet connection."
+        )
+        print("Connection error !")
+        return
+    except requests.exceptions.Timeout:
+        bot.reply_to(message, "Error: Request timed out. Please try again later.")
+        print("Timeout error !")
+        return
+    except requests.exceptions.RequestException as exc:
+        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        print(f"Request error: {exc}")
+        return
+    city_geo = response_fav.json()
+    if not city_geo:
+        bot.reply_to(message, f"Undefined place: {favorite_city}")
+        return
+    fav_info = city_geo[0]
+    lat = fav_info["lat"]
+    lon = fav_info["lon"]
+    send_forecast(message.chat.id, lat, lon, favorite_city)
 
 
 @bot.message_handler(commands=["start"])
@@ -216,13 +295,7 @@ def fetch_weather(lat, lon):
     return response.json()  # get { 'coord': {lon: 12.345, lat:12.345}
 
 
-@bot.message_handler(commands=["forecast"])
-def forecast(message):
-    coordinates = last_coordinates.get(message.chat.id)
-    if not coordinates:
-        bot.reply_to(message, "Please enter a city or village name first.")
-        return
-    lat, lon = coordinates
+def send_forecast(chat_id, lat, lon, city_name):
     try:
         forecast_response = requests.get(
             f"https://api.openweathermap.org/data/2.5/forecast",
@@ -237,29 +310,29 @@ def forecast(message):
         )
         forecast_response.raise_for_status()
     except requests.exceptions.HTTPError:
-        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        bot.send_message(chat_id, "Error: Unable to fetch data from the weather service.")
         print("HTTP error !")
         return
     except requests.exceptions.ConnectionError:
-        bot.reply_to(
-            message, "Error: Connection error. Please check your internet connection."
+        bot.send_message(
+            chat_id, "Error: Connection error. Please check your internet connection."
         )
         print("Connection error !")
         return
     except requests.exceptions.Timeout:
-        bot.reply_to(message, "Error: Request timed out. Please try again later.")
+        bot.send_message(chat_id, "Error: Request timed out. Please try again later.")
         print("Timeout error !")
         return
     except requests.exceptions.RequestException as exc:
-        bot.reply_to(message, "Error: Unable to fetch data from the weather service.")
+        bot.send_message(
+            chat_id, "Error: Unable to fetch data from the weather service."
+        )
         print(f"Request error: {exc}")
         return
 
     forecast_data = forecast_response.json()
 
     forecast_info = forecast_data.get("list", [])
-
-    city_name = last_cities.get(message.chat.id, "Unknown place!")
 
     forecast_by_day = {}
 
@@ -313,9 +386,21 @@ def forecast(message):
  """
             day_message += head_forecast
         if not is_first:
-            time.sleep(0.8)
-        bot.send_message(message.chat.id, day_message)
+            time.sleep(0.7)
+        bot.send_message(chat_id, day_message)
         is_first = False
+
+
+@bot.message_handler(commands=["forecast"])
+def forecast(message):
+    coordinates = last_coordinates.get(message.chat.id)
+    if not coordinates:
+        bot.reply_to(message, "Please enter a city or village name first.")
+        return
+    lat, lon = coordinates
+    send_forecast(
+        message.chat.id, lat, lon, last_cities.get(message.chat.id, "Unknown place!")
+    )
 
 
 @bot.message_handler(content_types=["text"])
@@ -373,7 +458,6 @@ def get_weather(message):
         "SELECT city FROM History WHERE user_id = ? ORDER BY id DESC LIMIT 5",
         (id_person,),
     )
-    connection.commit()
     cursor.close()
     connection.close()
 

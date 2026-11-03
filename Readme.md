@@ -35,6 +35,7 @@ The project uses the OpenWeatherMap API to retrieve weather data and SQLite to s
 | `/forecast` | Get the five-day weather forecast for the last searched location. |
 | `/history` | View the ten most recent city searches. |
 | `/favorite` | Save a city to your favorites. |
+| `/favorite_city`| Forecast for your favorite city |
 
 ## 🚀 Installation and Setup
 
@@ -95,15 +96,6 @@ python main.py
 
 Open your bot in Telegram and send `/start`.
 
-## 🗂️ Project Structure
-
-```text
-Weather-Lentyay-Bot/
-├── main.py
-├── .gitignore
-├── README.md
-└── .env                 # Local configuration; not committed
-```
 
 ## 🌦️ How It Works
 
